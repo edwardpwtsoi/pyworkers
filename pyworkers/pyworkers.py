@@ -12,7 +12,7 @@ class ThreadWorkers:
     def __init__(self, worker=1, interval=1.0, logger=None):
         self.is_running = True
         self.logger = logger
-        self._updating_threads = [Thread(target=self.loop) for _ in range(worker)]
+        self._updating_threads = [Thread(target=self._loop) for _ in range(worker)]
         self.tasks = list()
         self.results = list()
         self.interval = interval
@@ -25,7 +25,7 @@ class ThreadWorkers:
         else:
             self.logger.exception(msg)
 
-    def loop(self):
+    def _loop(self):
         while self.is_running:
             try:
                 function, args = self.tasks.pop(0)
