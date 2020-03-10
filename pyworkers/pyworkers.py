@@ -1,19 +1,21 @@
 from threading import Thread
-from multiprocessing import Process, Queue
+from multiprocessing import Process
+from multiprocessing import Queue as MPQ
+from queue import Queue
 import traceback
 import sys
 import logging
 from logging import handlers
 from queue import Empty
-import os
 
 
 class ThreadWorkers:
     def __init__(self, worker=1, interval=1.0, logger=None):
-        self.is_running = True
         self.logger = logger
         self._updating_threads = [Thread(target=self._loop) for _ in range(worker)]
-        self.tasks = list()
+        for t in self._updating_threads:
+            t.daemon = True
+        self.tasks = Queue()
         self.results = list()
         self.interval = interval
         [t.start() for t in self._updating_threads]
@@ -26,19 +28,16 @@ class ThreadWorkers:
             self.logger.exception(msg)
 
     def _loop(self):
-        while self.is_running:
+        for function, args in iter(self.tasks.get, "STOP"):
             try:
-                function, args = self.tasks.pop(0)
                 result = function(*args)
                 if result is not None:
                     self.results.append(result)
-            except IndexError:
-                pass
             except Exception as e:
                 self._log(f"Unhandled exception {e}")
 
     def add_task(self, func, args):
-        self.tasks.append((func, args))
+        self.tasks.put((func, args))
 
     def get_result(self):
         try:
@@ -47,15 +46,12 @@ class ThreadWorkers:
             return None
 
     def stop(self):
-        self.is_running = False
-
-    def release(self):
-        [t.join() for t in self._updating_threads]
+        [self.tasks.put("STOP") for _ in  self._updating_threads]
 
 
 class Listener:
     def __init__(self):
-        self.msg_queue = Queue()
+        self.msg_queue = MPQ()
         self.process = Process(target=self.listener_process, args=(self.msg_queue, self.listener_configurer))
         self.process.daemon = True
         self.process.start()
@@ -92,8 +88,8 @@ class Listener:
 class ProcessWorkers:
     def __init__(self, number_of_workers, logging_queue):
         self.number_of_workers = number_of_workers
-        self._input_queue = Queue()
-        self._output_queue = Queue()
+        self._input_queue = MPQ()
+        self._output_queue = MPQ()
         self._logging_queue = logging_queue
         self.processes = [Process(
             target=self.loop,
